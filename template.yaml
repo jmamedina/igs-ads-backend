@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  igs-leaderboard-backend
+
+  Sample SAM Template for igs-leaderboard-backend
+
+#Metadata
+Metadata:
+  Version: 1.0.2  # Increment this
+  AWS::ServerlessRepo::Application:
+    Name: igs-leaderboard-backend
+    Description: IGS Leaderboard backend
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Parameters:
+  Stage:
+    Type: String
+    Default: test
+  DBName:
+    Type: String
+    Default: igolfshaper_500club
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: sniper
+  DBUser:
+    Type: String
+    Default: birdie
+  DBHost:
+    Type: String
+    Default: testigolfsinstance3.ct79rjaczo1m.ap-northeast-1.rds.amazonaws.com
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where the lambda function will be deploayed
+    Default: vpc-760f9213
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet in the VPC
+    Default: subnet-a894e4df
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet in the VPC
+    Default: subnet-d4d75c8d
+
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+
+Resources:
+  DependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: dependencies-layer
+      Description: Dependencies layer
+      ContentUri: ./dependencies_layer
+      CompatibleRuntimes:
+      - python3.9
+      RetentionPolicy: Retain
+
+  SelectTournamentApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Models:
+        SelectModel:
+          type: object
+          required:
+            - db_name
+          properties:
+            db_name:
+              type: string
+      Cors:
+        AllowMethods:
+          - GET
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+    Tags:
+      UpdateTime: !Ref AWS::Date
+    
+  SelectTournamentFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: select_tournament/
+      Handler: app.lambda_handler
+      Runtime: python3.9
+      Architectures:
+      - x86_64
+      Layers:
+      - !Ref DependenciesLayer
+      Environment:
+        Variables:
+          DB_NAME: !Ref DBName
+          DB_PASSWORD: !Ref DBPassword
+          DB_USER: !Ref DBUser
+          DB_HOST: !Ref DBHost
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SelectTournamentLambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Policies:
+        - VPCAccessPolicy: {}
+      Events:
+        SelectTournament:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /select
+            Method: get
+            RestApiId: !Ref SelectTournamentApi
+            RequestParameters:
+              method.request.querystring.db_name: true
+
+  SelectTournamentLambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Select Tournament Lambda Security Group"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+        
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  SelectTournamentApi:
+    Description: API Gateway endpoint URL for Prod stage for Hello World function
+    Value: !Sub "https://${SelectTournamentApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/select/"
+  SelectTournamentFunction:
+    Description: Hello World Lambda Function ARN
+    Value: !GetAtt SelectTournamentFunction.Arn
+  SelectTournamentFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value: !GetAtt SelectTournamentFunctionRole.Arn
