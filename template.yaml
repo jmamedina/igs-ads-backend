@@ -17,10 +17,6 @@ Parameters:
   Stage:
     Type: String
     Default: test
-  DBName:
-    Type: String
-    Default: igolfshaper_500club
-
   DBPassword:
     Type: String
     NoEcho: true
@@ -28,9 +24,6 @@ Parameters:
   DBUser:
     Type: String
     Default: birdie
-  DBHost:
-    Type: String
-    Default: testigolfsinstance3.ct79rjaczo1m.ap-northeast-1.rds.amazonaws.com
   VPC:
     Type: AWS::EC2::VPC::Id
     Description: VPC where the lambda function will be deploayed
@@ -43,14 +36,10 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Private subnet in the VPC
     Default: subnet-d4d75c8d
-
-
 Globals:
   Function:
     Timeout: 3
     MemorySize: 128
-
-    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
     LoggingConfig:
       LogFormat: JSON
 
@@ -78,10 +67,42 @@ Resources:
             db_name:
               type: string
       Cors:
-        AllowMethods:
-          - GET
+        AllowMethods: "'GET, OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
         AllowOrigin: "'*'"
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: !Ref AWS::StackName
+          description: IGS Leaderboard Backend
+          version: '1.0'
+        paths:
+            /select:
+              get:
+                x-amazon-apigateway-integration:
+                  httpMethod: POST
+                  type: aws_proxy
+                  uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SelectTournamentFunction.Arn}/invocations"
+                  responses:
+                    '200':
+                      statusCode: 200
+                      responseParameters: 
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+                responses: 
+                  '200':
+                    description: OK
+                    headers:
+                      Access-Control-Allow-Origin:
+                        type: string
+                parameters:
+                  - in: query
+                    name: db_name
+                    required: true
+                    type: string
+                  - in: query
+                    name: db_host
+                    required: false
+                    type: string
     Tags:
       UpdateTime: !Ref AWS::Date
     
@@ -97,10 +118,8 @@ Resources:
       - !Ref DependenciesLayer
       Environment:
         Variables:
-          DB_NAME: !Ref DBName
           DB_PASSWORD: !Ref DBPassword
           DB_USER: !Ref DBUser
-          DB_HOST: !Ref DBHost
       VpcConfig:
         SecurityGroupIds:
           - !Ref SelectTournamentLambdaSecurityGroup
@@ -111,13 +130,15 @@ Resources:
         - VPCAccessPolicy: {}
       Events:
         SelectTournament:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Type: Api
           Properties:
             Path: /select
             Method: get
             RestApiId: !Ref SelectTournamentApi
             RequestParameters:
               method.request.querystring.db_name: true
+
+  
 
   SelectTournamentLambdaSecurityGroup:
     Type: AWS::EC2::SecurityGroup

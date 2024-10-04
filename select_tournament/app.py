@@ -10,11 +10,9 @@ logger.setLevel(logging.INFO)
 
 db_user = os.environ.get('DB_USER', 'default_user')
 db_password = os.environ.get('DB_PASSWORD', 'default_password')
-db_host = os.environ.get('DB_HOST', 'default_host')
-default_db_name = os.environ.get('DB_NAME', 'default_db')
 
 #create the database connection outside of the lambda handler
-def get_db_connection(db_name):
+def get_db_connection(db_name, db_host):
     try:
         conn = pymysql.connect(host=db_host, user=db_user, passwd=db_password, db=db_name, connect_timeout=10)
         logger.info("SUCCESS: Connection to RDS MySQL instance succeeded")
@@ -50,20 +48,23 @@ def convert_datetime_to_string(data):
 
 def lambda_handler(event, context):
     query_params = event.get('queryStringParameters', {})
+    
     if not query_params or 'db_name' not in query_params:
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "db_name parameter is required"})
         }
-    db_name = query_params['db_name']
-
-    if not db_name:
+        
+    if 'db_host' not in query_params:
         return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Failed to connect to the database."})
+            "statusCode": 400,
+            "body": json.dumps({"error": "db_host parameter is required"})
         }
+        
+    db_name = query_params['db_name']
+    db_host = query_params['db_host']
 
-    conn = get_db_connection(db_name)
+    conn = get_db_connection(db_name, db_host)
     if not conn:
         return {
             "statusCode": 500,
@@ -71,6 +72,7 @@ def lambda_handler(event, context):
         }
 
     print("db_name" + db_name)
+    print("db_name" + db_host)
 
     try:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -90,8 +92,11 @@ def lambda_handler(event, context):
         
         return {
             "statusCode": 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+            },
             "body": json.dumps({
-                "query_results": results_json
+                "tournament_list": results_json
             }),
         }
     except Exception as e:
